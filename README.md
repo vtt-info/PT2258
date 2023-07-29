@@ -38,7 +38,7 @@ def main() -> None:
         for volume in range(100):
             print('Volume is at maximum' if volume == 0 else f'Master volume: {volume}dB')
             pt2258.master_volume(volume)
-            utime.sleep(0.5)  # Every off half second the master volume raise up
+            utime.sleep(0.5)  # Every half second the master volume raise up
 
 
 if __name__ == '__main__':
