@@ -82,7 +82,7 @@ class PT2258:
         """
         flip_value: we flip the value 0 to 100 into 100 to 0
         the logic is -79dB is valve dead close no more flow, -0db is valve full open
-        if we send 0 to 100 with out the flip the control work reverse which is not ethical so we to flip the value 
+        if we send 0 to 100 with out the flip the control work reverse which is not ethical so we flip the value 
         """
         map_value = (flip_value - in_main) * (out_max - out_main) // (in_max - in_main) + out_main
         return int(map_value)
