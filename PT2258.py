@@ -14,9 +14,9 @@ class PT2258:
             raise ValueError('I2C object is required')
         self.__I2C = port
         valid_addresses = [0x8C, 0x88, 0x84, 0x80]
-        if address not in valid_addresses:  # the address is not match the program raise value error
+        if address not in valid_addresses:
             raise ValueError('The I2C device address is not valid')
-        # 7-bit address is accepted by I2C
+        # Convert 7-bit address to 8-bit for I2C communication
         self.__PT2258_ADDR = const(address >> 1)
         # Initializing the PT2258
         self.__initialize_pt2258()
@@ -35,7 +35,7 @@ class PT2258:
             if e.args[0] == 5:  # I2C bus error (Device not found)
                 raise RuntimeError("Device not found on the I2C bus.")
             else:
-                raise RuntimeError(f"I2C communication error acquired in: {e}")
+                raise RuntimeError(f"I2C communication error occurred: {e}")
 
     def __initialize_pt2258(self) -> None:
         """
@@ -46,16 +46,16 @@ class PT2258:
         """
         # Functions registers
         clear_register = const(0xC0)
+        # Wait for stabilization
         utime.sleep_ms(200)
-        self.__write_pt2258(0, clear_register)  # sending clear_register also checking the device is the bus
+        # Clear the register to ensure a clean start
+        self.__write_pt2258(0, clear_register)
 
     @staticmethod
     def __volume_map(value: int, in_main: int, in_max: int, out_main: int, out_max: int) -> int:
         """
         Map the given value from the input range to the output range.
-        flip_value: we flip the value 0 to 100 into 100 to 0
-        the logic is -79dB is valve dead close no more flow, -0db is valve full open
-        if we send 0 to 100 without the flip the control work reverse which is not ethical so we to flip the value
+        The value is flipped so that 0 dB represents maximum volume and -79 dB represents minimum volume.
 
         :param value: The input value to be mapped to the output range.
         :param in_main: The minimum value of the input range.
@@ -75,7 +75,7 @@ class PT2258:
 
         :param volume: The master volume value (0 to 100).
         """
-        # master volume registers
+        # Master volume registers
         master_1db = const(0xE0)
         master_10db = const(0xD0)
         if not 0 <= volume <= 100:
@@ -83,7 +83,8 @@ class PT2258:
         # Map the value to PT2258 range (0 to 79)
         mapped_volume = self.__volume_map(value=volume, in_main=0, in_max=100, out_main=0, out_max=79)
         a, b = divmod(mapped_volume, 10)
-        self.__write_pt2258(master_10db | a, master_1db | b)  # We need to send 10dB byte followed by 1dB
+        # Send master volume data: 10dB followed by 1dB
+        self.__write_pt2258(master_10db | a, master_1db | b)
 
     def channel_volume(self, channel: int, volume: int) -> None:
         """
@@ -109,7 +110,8 @@ class PT2258:
         mapped_volume = self.__volume_map(value=volume, in_main=0, in_max=100, out_main=0, out_max=79)
         a, b = divmod(mapped_volume, 10)
         channel_10db, channel_1db = channel_registers[channel]
-        self.__write_pt2258(channel_10db | a, channel_1db | b)  # We need to send 10dB byte followed by 1dB
+        # Send channel volume data: 10dB followed by 1dB
+        self.__write_pt2258(channel_10db | a, channel_1db | b)
 
     def toggle_mute(self, mute: bool) -> None:
         """
@@ -120,9 +122,13 @@ class PT2258:
         # Mute registers
         mute_on = const(0xF9)
         mute_off = const(0xF8)
+        # Choose the appropriate mute setting
         toggled_mute = mute_on if mute else mute_off
-        # the write_pt2258 function take 2 parameter, but we don't need 2 parameter so make one dummy passing 0
-        # for minimising I2C over flow and improve efficient
+        # Send the mute data
         self.__write_pt2258(0, toggled_mute)
+        """
+        The write_pt2258 function take 2 parameter, but we don't need 2 so make i mummy passing 0
+        is done to minimize I2C overhead and improve efficiency.
+        """
 
-    # The code ends here
+# The code ends here
