@@ -14,30 +14,12 @@ class PT2258:
             raise ValueError('I2C object is required')
         self.__I2C = port
         valid_addresses = [0x8C, 0x88, 0x84, 0x80]
-        if address not in valid_addresses:
+        if address not in valid_addresses:  # the address is not match the program raise value error
             raise ValueError('The I2C device address is not valid')
-
-        self.__PT2258_ADDR = const(address >> 1)  # 7-bit address is accepted by I2C
-
-        # Functions registers
-        self.__CLEAR_REGISTER = const(0xC0)
-        # Mute registers
-        self.__MUTE_ON = const(0xF9)
-        self.__MUTE_OFF = const(0xF8)
-        # master volume registers
-        self.__MASTER_1dB = const(0xE0)
-        self.__MASTER_10dB = const(0xD0)
-
-        # Channel volume registers: 10dB step, 1dB step
-        self.__CHANNEL_REGISTERS = [
-            (0x80, 0x90),  # channel 1 (10dB, 1dB)
-            (0x40, 0x50),  # channel 2 (10dB, 1dB)
-            (0x00, 0x10),  # channel 3 (10dB, 1dB)
-            (0x20, 0x30),  # channel 4 (10dB, 1dB)
-            (0x60, 0x70),  # channel 5 (10dB, 1dB)
-            (0xA0, 0xB0),  # channel 6 (10dB, 1dB)
-        ]
-        self.__init_pt2258()  # Initializing the PT2258
+        # 7-bit address is accepted by I2C
+        self.__PT2258_ADDR = const(address >> 1)
+        # Initializing the PT2258
+        self.__initialize_pt2258()
 
     def __write_pt2258(self, volume_10db: int, volume_1db: int) -> None:
         """
@@ -55,20 +37,25 @@ class PT2258:
             else:
                 raise RuntimeError(f"I2C communication error acquired in: {e}")
 
-    def __init_pt2258(self) -> None:
+    def __initialize_pt2258(self) -> None:
         """
         Initialize the PT2258 audio IC after power-up.
 
         This function waits for a short time to ensure stability
         and then sends an I2C write operation to clear register 0xC0 of the PT2258 IC.
         """
+        # Functions registers
+        clear_register = const(0xC0)
         utime.sleep_ms(200)
-        self.__write_pt2258(0, self.__CLEAR_REGISTER)
+        self.__write_pt2258(0, clear_register)  # sending clear_register also checking the device is the bus
 
     @staticmethod
     def __volume_map(value: int, in_main: int, in_max: int, out_main: int, out_max: int) -> int:
         """
         Map the given value from the input range to the output range.
+        flip_value: we flip the value 0 to 100 into 100 to 0
+        the logic is -79dB is valve dead close no more flow, -0db is valve full open
+        if we send 0 to 100 without the flip the control work reverse which is not ethical so we to flip the value
 
         :param value: The input value to be mapped to the output range.
         :param in_main: The minimum value of the input range.
@@ -78,13 +65,8 @@ class PT2258:
         :return: The mapped value in the output range as an integer.
         """
         value = max(in_main, min(value, in_max))
-        flip_value = 100 - value
-        """
-        flip_value: we flip the value 0 to 100 into 100 to 0
-        the logic is -79dB is valve dead close no more flow, -0db is valve full open
-        if we send 0 to 100 without the flip the control work reverse which is not ethical so we flip the value 
-        """
-        map_value = (flip_value - in_main) * (out_max - out_main) // (in_max - in_main) + out_main
+        flipped_value = 100 - value
+        map_value = (flipped_value - in_main) * (out_max - out_main) // (in_max - in_main) + out_main
         return int(map_value)
 
     def master_volume(self, volume: int) -> None:
@@ -93,11 +75,15 @@ class PT2258:
 
         :param volume: The master volume value (0 to 100).
         """
+        # master volume registers
+        master_1db = const(0xE0)
+        master_10db = const(0xD0)
         if not 0 <= volume <= 100:
             raise ValueError("Master volume should be in the range 0 to 100.")
-        mapped_volume = self.__volume_map(volume, 0, 100, 0, 79)  # Map the value to PT2258 range (0 to 79)
+        # Map the value to PT2258 range (0 to 79)
+        mapped_volume = self.__volume_map(value=volume, in_main=0, in_max=100, out_main=0, out_max=79)
         a, b = divmod(mapped_volume, 10)
-        self.__write_pt2258(self.__MASTER_10dB | a, self.__MASTER_1dB | b)  # We need to send 10dB byte followed by 1dB
+        self.__write_pt2258(master_10db | a, master_1db | b)  # We need to send 10dB byte followed by 1dB
 
     def channel_volume(self, channel: int, volume: int) -> None:
         """
@@ -110,9 +96,19 @@ class PT2258:
             raise ValueError("Channel volume should be in the range 0 to 100.")
         if not 0 <= channel <= 5:
             raise ValueError("Channel should be in the range 0 to 5.")
-        mapped_volume = self.__volume_map(volume, 0, 100, 0, 79)  # Map the value to PT2258 range (0 to 79)
+        # Channel volume registers: 10dB step, 1dB step
+        channel_registers = [
+            (0x80, 0x90),  # channel 1 (10dB, 1dB)
+            (0x40, 0x50),  # channel 2 (10dB, 1dB)
+            (0x00, 0x10),  # channel 3 (10dB, 1dB)
+            (0x20, 0x30),  # channel 4 (10dB, 1dB)
+            (0x60, 0x70),  # channel 5 (10dB, 1dB)
+            (0xA0, 0xB0),  # channel 6 (10dB, 1dB)
+        ]
+        # Map the value to PT2258 range (0 to 79)
+        mapped_volume = self.__volume_map(value=volume, in_main=0, in_max=100, out_main=0, out_max=79)
         a, b = divmod(mapped_volume, 10)
-        channel_10db, channel_1db = self.__CHANNEL_REGISTERS[channel]
+        channel_10db, channel_1db = channel_registers[channel]
         self.__write_pt2258(channel_10db | a, channel_1db | b)  # We need to send 10dB byte followed by 1dB
 
     def toggle_mute(self, mute: bool) -> None:
@@ -121,9 +117,12 @@ class PT2258:
 
         :param mute: If True, mute is turned on. If False, mute is turned off.
         """
-        if mute:
-            self.__write_pt2258(0, self.__MUTE_ON)
-        else:
-            self.__write_pt2258(0, self.__MUTE_OFF)
+        # Mute registers
+        mute_on = const(0xF9)
+        mute_off = const(0xF8)
+        toggled_mute = mute_on if mute else mute_off
+        # the write_pt2258 function take 2 parameter, but we don't need 2 parameter so make one dummy passing 0
+        # for minimising I2C over flow and improve efficient
+        self.__write_pt2258(0, toggled_mute)
 
-# The code ends here
+    # The code ends here
