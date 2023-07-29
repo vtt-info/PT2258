@@ -127,7 +127,7 @@ class PT2258:
         # Send the mute data
         self.__write_pt2258(0, toggled_mute)
         """
-        The write_pt2258 function take 2 parameter, but we don't need 2 so make i mummy passing 0
+        The write_pt2258 function take 2 parameter, but we don't need 2 so make 1 mummy passing 0
         is done to minimize I2C overhead and improve efficiency.
         """
 
